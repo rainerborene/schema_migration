@@ -110,15 +110,17 @@
 					foreach($pages as $page){
 						$id = $page->firstChild->textContent;
 					
-						if (in_array($id, $db_pages)){
-							$fields = array();
-						
-							foreach($page->childNodes as $node){
-								if ($node->tagName == 'id') continue;
-								$fields[$node->tagName] = $node->textContent;
-							}
+						$fields = array();
+					
+						foreach($page->childNodes as $node){
+							if ($node->tagName == 'id') continue;
+							$fields[$node->tagName] = $node->textContent;
+						}
 
+						if (in_array($id, $db_pages)){
 							Symphony::Database()->update($fields, 'tbl_pages', " id = {$id}");
+						} else {
+							Symphony::Database()->insert($fields, 'tbl_pages');
 						}
 					}
 				}
