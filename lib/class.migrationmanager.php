@@ -21,9 +21,8 @@
 			}
 		}
 
-		public static function getPagesTypes(){
+		public static function getPagesTypes($page_guid){
 			$result = array();
-			$callback = Administration::instance()->getPageCallback();
 			
 			$fields = $_POST['fields'];
 			$current_types = preg_split('/\s*,\s*/', $fields['type'], -1, PREG_SPLIT_NO_EMPTY);
@@ -31,18 +30,19 @@
 
 			$types = Symphony::Database()->fetch('SELECT * FROM `tbl_pages_types`');
 			
-			$page_id = $callback['context'][1];
-			$page_guid = null;
-			
-			$result[] = array(
-				'page_guid' => $page_guid,
-				'type' => $current_types
-			);
+			if (!empty($current_types)){
+				$result[] = array(
+					'page_guid' => $page_guid,
+					'type' => $current_types
+				);
+			}
 			
 			if (is_array($types) && !empty($types)){
 				foreach($types as $type){
+					$guid = Symphony::Database()->fetchVar('guid', 0, "SELECT guid `tbl_pages` WHERE id = {$type['page_id']}");
+
 					$result[] = array(
-						'page_guid' => $type['page_id'],
+						'page_guid' => $guid,
 						'type' => $type['type']
 					);
 				}
@@ -66,9 +66,16 @@
 			$entries = $xml->createElement('entries');
 			if (is_array($pages) && !empty($pages)){
 				foreach($pages as $page){
+					// Ensures that pages has a guid
+					if (!$page['guid']){
+						$page['guid'] = uniqid();
+						Symphony::Database()->update(array('guid' => $page['guid']), 'tbl_pages', "id = {$page['id']}");
+					}
+
 					$entry = $xml->createElement('entry');
-				
+
 					foreach($page as $column => $value){
+						if ($column == 'id') continue;
 						$data = $xml->createElement($column, $value);
 						$entry->appendChild($data);
 					}
@@ -78,7 +85,7 @@
 			}
 
 			// Page types
-			$types = MigrationManager::getPagesTypes();
+			$types = MigrationManager::getPagesTypes($page['guid']);
 			$pages_types = $xml->createElement('types');
 
 			if (is_array($types) && !empty($types)){
@@ -109,7 +116,7 @@
 			self::$sectionManager->flush();
 			$section = self::$sectionManager->fetch($section_id);
 			
-			# Ensures that section has a guid value
+			// Ensures that section has a guid value
 			if (!$section->get('guid')){
 				$section->set('guid', uniqid());
 				$section->commit();
@@ -121,7 +128,7 @@
 
 			if (is_array($field_objects) && !empty($field_objects)){
 				foreach($field_objects as $f){
-					# Ensures that fields has guid values
+					// Ensures that fields has guid values
 					if (!$f->get('guid')){
 						$f->set('guid', uniqid());
 						self::$fieldManager->edit($f->get('id'), array('guid' => $f->get('guid')));
