@@ -4,7 +4,7 @@
 
 	class Synchronizer {
 
-		public static function __removeMissingFields($fields, &$fieldManager){
+		public static function removeMissingFields($fields, &$fieldManager){
 			$id_list = array();
 			
 			if(is_array($fields) && !empty($fields)){
@@ -43,10 +43,10 @@
 					$xpath = new DOMXPath($xml);
 					
 					$editing = false;
-					$section_id = $xpath->query('/section/@id')->item(0)->value;
-					$sections = Symphony::Database()->fetchCol('id', "SELECT * FROM `tbl_sections`");
+					$section_guid = $xpath->query('/section/@guid')->item(0)->value;
+					$sections = Symphony::Database()->fetchCol('guid', "SELECT * FROM `tbl_sections`");
 					
-					if (in_array($section_id, $sections)) $editing = true;
+					if (in_array($section_guid, $sections)) $editing = true;
 					
 					// Meta data
 					$meta = array();
@@ -54,7 +54,7 @@
 					foreach($meta_nodes as $node) $meta[$node->tagName] = $node->textContent;
 					
 					if ($editing){
-						$sectionManager->edit($section_id, $meta);
+						Symphony::Database()->update($meta, 'tbl_sections', "guid = {$section_guid}");
 					} else {
 						$section_id = $sectionManager->add($meta);
 					}
@@ -73,7 +73,7 @@
 						$fields[] = $field;
 					}
 					
-					self::__removeMissingFields($fields, $fieldManager);
+					self::removeMissingFields($fields, $fieldManager);
 					
 					if (is_array($fields) && !empty($fields)){
 						foreach($fields as $data){
@@ -155,10 +155,3 @@
 		}
 
 	}
-
-	function debug($var) {
-		header('Content-Type:text/plain; charset=utf-8');
-		var_dump($var);
-		exit;
-	}
-

@@ -3,28 +3,25 @@
 	require_once(TOOLKIT . '/class.sectionmanager.php');
 	require_once(TOOLKIT . '/class.fieldmanager.php');
 
-	class MigrationManager implements Singleton {
+	class MigrationManager {
 
-		protected static $_instance = null;
+		private static $_initialized;
 
-		public $sectionManager;
-		public $fieldManager;
+		static $sectionManager;
+		static $fieldManager;
 
-		private function __construct(){
-			$this->_engine =& Symphony::Engine();
-			$this->sectionManager = new SectionManager($this->_engine);
-			$this->fieldManager = new FieldManager($this->_engine);
-		}
+		private function __construct(){}
 
-		public static function instance(){
-			if (!(self::$_instance instanceof MigrationManager)){
-				self::$_instance = new MigrationManager;
+		public static function initialize(){
+			if (is_null(self::$_initialized)){
+				$engine =& Symphony::Engine();
+				self::$sectionManager = new SectionManager($engine);
+				self::$fieldManager = new FieldManager($engine);
+				self::$_initialized = true;
 			}
-
-			return self::$_instance;
 		}
 
-		private function __getPagesTypes(){
+		public static function getPagesTypes(){
 			$result = array();
 			$callback = Administration::instance()->getPageCallback();
 			
@@ -34,15 +31,18 @@
 
 			$types = Symphony::Database()->fetch('SELECT * FROM `tbl_pages_types`');
 			
+			$page_id = $callback['context'][1];
+			$page_guid = null;
+			
 			$result[] = array(
-				'page_id' => $callback['context'][1],
+				'page_guid' => $page_guid,
 				'type' => $current_types
 			);
 			
 			if (is_array($types) && !empty($types)){
 				foreach($types as $type){
 					$result[] = array(
-						'page_id' => $type['page_id'],
+						'page_guid' => $type['page_id'],
 						'type' => $type['type']
 					);
 				}
@@ -51,7 +51,7 @@
 			return $result;
 		}
 
-		public function migratePages(){
+		public static function migratePages(){
 			$pages = Symphony::Database()->fetch("SELECT * FROM `tbl_pages`");
 
 			// Creates DOMDocument object
@@ -78,7 +78,7 @@
 			}
 
 			// Page types
-			$types = $this->__getPagesTypes();
+			$types = MigrationManager::getPagesTypes();
 			$pages_types = $xml->createElement('types');
 
 			if (is_array($types) && !empty($types)){
@@ -105,15 +105,31 @@
 			General::writeFile($location, $output, Symphony::Configuration()->get('write_mode', 'file'));
 		}
 		
-		public function migrateSection($section_id){
-			$this->sectionManager->flush();
-			$section = $this->sectionManager->fetch($section_id);
+		public static function migrateSection($section_id){
+			self::$sectionManager->flush();
+			$section = self::$sectionManager->fetch($section_id);
 			
+			# Ensures that section has a guid value
+			if (!$section->get('guid')){
+				$section->set('guid', uniqid());
+				$section->commit();
+			}
+
 			$meta = $section->get();
 			$fields = array();
 			$field_objects = $section->fetchFields();
 
-			foreach($field_objects as $f) $fields[] = $f->get();
+			if (is_array($field_objects) && !empty($field_objects)){
+				foreach($field_objects as $f){
+					# Ensures that fields has guid values
+					if (!$f->get('guid')){
+						$f->set('guid', uniqid());
+						self::$fieldManager->edit($f->get('id'), array('guid' => $f->get('guid')));
+					}
+
+					$fields[] = $f->get();
+				}
+			}
 			
 			// Creates DOMDocument object
 			$xml = new DOMDocument('1.0', 'UTF-8');
@@ -122,7 +138,7 @@
 			
 			// Section element
 			$section = $xml->createElement('section');
-			$section->setAttribute('id', $meta['id']);
+			$section->setAttribute('guid', $meta['guid']);
 
 			// Section meta data
 			$section_meta = $xml->createElement('meta');
@@ -140,6 +156,7 @@
 				$field = $xml->createElement('entry');
 
 				foreach($f as $key => $value){
+					if ($key == 'id' || $key == 'field_id') continue;
 					$data = $xml->createElement($key, $value);
 					$field->appendChild($data);
 				}
@@ -158,7 +175,7 @@
 			General::writeFile($location, $output, Symphony::Configuration()->get('write_mode', 'file'));
 		}
 
-		public function cleanup(){
+		public static function cleanup(){
 			$sections = Symphony::Database()->fetchCol('handle', "SELECT * FROM `tbl_sections`");
 
 			$files = General::listStructure(WORKSPACE . '/sections', array(), false);

@@ -5,6 +5,21 @@
 
 	class extension_schema_migration extends Extension {
 
+		public function __construct(array $args){
+			$this->_Parent =& $args['parent'];
+			MigrationManager::initialize();
+		}
+
+		public function __call($name, $args){
+			$methods = array('migratePages', 'cbSectionPreDelete', 'cbSectionPostCreateEdit', 'cleanupSections');
+
+			if (in_array($name, $methods) && Symphony::Configuration()->get('enabled', 'migrations') !== 'yes'){
+				return false;
+			}
+			
+			return call_user_func_array($name, $args);
+		}
+
 		public function about(){
 			return array(
 				'name' => 'Schema Migration',
@@ -78,6 +93,7 @@
 			);
 		}
 
+
 		public function appendPreferences($context){
 			$group = new XMLElement('fieldset');
 			$group->setAttribute('class', 'settings');
@@ -107,24 +123,18 @@
 		}
 
 		public function cleanupSections($context){
-			if (Symphony::Configuration()->get('enabled', 'migrations') !== 'yes') return;
-
 			$callback = Administration::instance()->getPageCallback();
 
 			if ($callback['driver'] === 'blueprintssections'){
-				MigrationManager::instance()->cleanup();
+				MigrationManager::cleanup();
 			}
 		}
 
 		public function cbSectionPostCreateEdit($context){
-			if (Symphony::Configuration()->get('enabled', 'migrations') !== 'yes') return;
-			
-			MigrationManager::instance()->migrateSection($context['section_id']);
+			MigrationManager::migrateSection($context['section_id']);
 		}
 
 		public function cbSectionPreDelete($context){
-			if (Symphony::Configuration()->get('enabled', 'migrations') !== 'yes') return;
-			
 			$section_ids = implode(',', $context['section_ids']);
 			$sections = Symphony::Database()->fetchCol('handle', "SELECT * FROM `tbl_sections` WHERE id IN ({$section_ids})");
 
@@ -134,21 +144,32 @@
 		}
 
 		public function migratePages($context){
-			if (Symphony::Configuration()->get('enabled', 'migrations') !== 'yes') return;
-
-			MigrationManager::instance()->migratePages();
+			MigrationManager::migratePages();
 		}
 
 		public function install(){
-			if (@!is_dir(WORKSPACE . '/sections')){
-				return General::realiseDirectory(WORKSPACE . '/sections');
-			}
+			@General::realiseDirectory(WORKSPACE . '/sections');
+			@General::realiseDirectory(WORKSPACE . '/pages');
 
-			if (@!is_dir(WORKSPACE . '/pages')){
-				return General::realiseDirectory(WORKSPACE . '/pages');
-			}
+			Symphony::Database()->query("ALTER TABLE `tbl_sections` ADD `guid` varchar(13) NOT NULL AFTER `navigation_group`");
+			Symphony::Database()->query("ALTER TABLE `tbl_fields` ADD `guid` varchar(13) NOT NULL AFTER `show_column`");
+			Symphony::Database()->query("ALTER TABLE `tbl_pages` ADD `guid` varchar(13) NOT NULL AFTER `sortorder`");
 
 			return true;
 		}
 
+		public function uninstall(){
+			Symphony::Database()->query("ALTER TABLE `tbl_sections` DROP `guid`");
+			Symphony::Database()->query("ALTER TABLE `tbl_fields` DROP `guid`");
+			Symphony::Database()->query("ALTER TABLE `tbl_pages` DROP `guid`");
+			
+			return true;
+		}
+
+	}
+
+	function debug($var) {
+		header('Content-Type:text/plain; charset=utf-8');
+		var_dump($var);
+		exit;
 	}
